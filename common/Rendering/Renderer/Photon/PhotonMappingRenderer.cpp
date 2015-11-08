@@ -9,16 +9,30 @@
 #include "common/Scene/SceneObject.h"
 #include "common/Scene/Geometry/Mesh/MeshObject.h"
 #include "common/Rendering/Material/Material.h"
+#include "glm/gtx/component_wise.hpp"
 
-#define VISUALIZE_PHOTON_MAPPING 1
+#define VISUALIZE_PHOTON_MAPPING 0
+#define DISABLE_BACKWARD_RENDERER 0
 
 PhotonMappingRenderer::PhotonMappingRenderer(std::shared_ptr<class Scene> scene, std::shared_ptr<class ColorSampler> sampler):
-    Renderer(scene, sampler), diffusePhotonNumber(1000), causticPhotonNumber(1000)
+    BackwardRenderer(scene, sampler), diffusePhotonNumber(500000), causticPhotonNumber(1000), 
+#if VISUALIZE_PHOTON_MAPPING
+    photonGatherRange(0.05f),
+#else
+    photonGatherRange(0.05f),
+#endif
+    maxPhotonBounces(1000),
+    lightIntensityMultiplier(500.f),
+    finalGatherSamples(4),
+    finalGatherBounces(5)
 {
+    srand(static_cast<unsigned int>(time(NULL)));
 }
 
 void PhotonMappingRenderer::InitializeRenderer()
 {
+    DIAGNOSTICS_TIMER(timer, "Photon Mapping Generation");
+    BackwardRenderer::InitializeRenderer();
     // Generate Photon Maps
     GenericPhotonMapGeneration(diffuseMap, diffusePhotonNumber, [](const class MeshObject& mesh) {
         const Material* mat = mesh.GetMaterial();
@@ -27,6 +41,7 @@ void PhotonMappingRenderer::InitializeRenderer()
         }
         return mat->HasDiffuseReflection();
     });
+    diffuseMap.optimise();
 
     // Todo if you have time: generate the photon caustic map
 }
@@ -72,28 +87,198 @@ void PhotonMappingRenderer::GenericPhotonMapGeneration(PhotonKdtree& photonMap, 
 
         const float proportion = glm::length(currentLight->GetLightColor()) / totalLightIntensity;
         const int totalPhotonsForLight = static_cast<const int>(proportion * totalPhotons);
-        const glm::vec3 photonIntensity = currentLight->GetLightColor() / static_cast<float>(totalPhotonsForLight);
+        const glm::vec3 photonIntensity = currentLight->GetLightColor() / static_cast<float>(totalPhotonsForLight) * lightIntensityMultiplier;
         for (int j = 0; j < totalPhotonsForLight; ++j) {
             Ray photonRay;
             std::vector<char> path;
             path.push_back('L');
             currentLight->GenerateRandomPhotonRay(photonRay);
-            TracePhoton(photonRay, photonIntensity, path);
+            TracePhoton(photonMap, &photonRay, photonIntensity, path, 1.f, maxPhotonBounces);
         }
     }
 }
 
-void PhotonMappingRenderer::TracePhoton(const class Ray& photonRay, glm::vec3 lightIntensity, std::vector<char>& path)
+glm::vec3 PhotonMappingRenderer::HemisphereRandomSample() const
 {
+    // Perform random scattering in the hemisphere above the intersection point.
+    const float u1 = static_cast<float>(rand()) / RAND_MAX;
+    const float u2 = static_cast<float>(rand()) / RAND_MAX;
+
+    const float r = std::sqrt(u1);
+    const float theta = 2.f * PI * u2;
+
+    glm::vec3 diffuseReflectionDir;
+    diffuseReflectionDir.x = r * std::cos(theta);
+    diffuseReflectionDir.y = r * std::sin(theta);
+    diffuseReflectionDir.z = std::sqrt(std::max(0.f, 1.f - u1));
+    return diffuseReflectionDir;
+}
+
+void PhotonMappingRenderer::TracePhoton(PhotonKdtree& photonMap, Ray* photonRay, glm::vec3 lightIntensity, std::vector<char>& path, float currentIOR, int remainingBounces)
+{
+    if (remainingBounces < 0) {
+        return;
+    }
+
+    assert(photonRay);
+    IntersectionState state(0, 0);
+    state.currentIOR = currentIOR;
+
+    if (storedScene->Trace(photonRay, &state)) {
+        const glm::vec3 intersectionPoint = state.intersectionRay.GetRayPosition(state.intersectionT);
+
+        if (path.size() > 1) {
+            // Store in photon map
+            Photon newPhoton;
+            newPhoton.position = intersectionPoint;
+            newPhoton.intensity = lightIntensity;
+
+            newPhoton.toLightRay = *photonRay;
+            newPhoton.toLightRay.SetRayDirection(newPhoton.toLightRay.GetRayDirection() * -1.f);
+
+            photonMap.insert(newPhoton);
+        }
+
+        // Determine whether we should do diffuse reflection, specular reflection, transmission, or die.
+        const MeshObject* hitMeshObject = state.intersectedPrimitive->GetParentMeshObject();
+        assert(hitMeshObject);
+        const Material* hitMaterial = hitMeshObject->GetMaterial();
+        assert(hitMaterial);
+
+        const glm::vec3 baseDiffuseReflection = hitMaterial->GetBaseDiffuseReflection();
+        const float diffuseL1 = glm::dot(baseDiffuseReflection, glm::vec3(1.f));
+
+        const glm::vec3 baseSpecularReflection = hitMaterial->GetBaseSpecularReflection();
+        const float specularL1 = glm::dot(baseSpecularReflection, glm::vec3(1.f));
+
+        const glm::vec3 baseTransmittance = hitMaterial->GetBaseTransmittance();
+        const float transmittanceL1 = glm::dot(baseTransmittance, glm::vec3(1.f));
+
+        const float probabilityForSurvival = std::min(glm::compMax(baseTransmittance + baseDiffuseReflection + baseSpecularReflection), 0.99f);
+        const float totalL1 = diffuseL1 + specularL1 + transmittanceL1;
+
+        const float diffuseProbabilityThreshold = diffuseL1 / totalL1 * probabilityForSurvival;
+        const float specularProbabilityThreshold = diffuseProbabilityThreshold + specularL1 / totalL1 * probabilityForSurvival;
+        const float transmissionProbabilityThreshold = specularProbabilityThreshold + transmittanceL1 / totalL1 * probabilityForSurvival;
+        const float russianRoulette = static_cast<float>(rand()) / RAND_MAX;
+
+        const glm::vec3 intersectedNormal = state.ComputeNormal();
+        glm::vec3 intersectionBitangent;
+        if (glm::dot(intersectedNormal, glm::vec3(1.f, 0.f, 0.f)) - 1.f > LARGE_EPSILON) {
+            intersectionBitangent = glm::cross(intersectedNormal, glm::vec3(1.f, 0.f, 0.f));
+        } else {
+            intersectionBitangent = glm::cross(intersectedNormal, glm::vec3(0.f, 1.f, 0.f));
+        }
+
+        glm::vec3 intersectionTangent = glm::cross(intersectedNormal, intersectionBitangent);
+        const glm::mat3 tangentToWorldMatrix(intersectionTangent, intersectionBitangent, intersectedNormal);
+
+        Ray newPhotonRay;
+        const float NdR = glm::dot(photonRay->GetRayDirection(), intersectedNormal);
+        const MeshObject* intersectedMesh = state.intersectedPrimitive->GetParentMeshObject();
+        assert(intersectedMesh);
+        const Material* currentMaterial = intersectedMesh->GetMaterial();
+        assert(currentMaterial);
+        float targetIOR = currentIOR;
+        
+        if (russianRoulette < diffuseProbabilityThreshold) {
+            path.push_back('D');
+
+            glm::vec3 diffuseReflectionDir = glm::normalize(tangentToWorldMatrix * HemisphereRandomSample());
+            newPhotonRay.SetRayPosition(intersectionPoint + LARGE_EPSILON * intersectedNormal);
+            newPhotonRay.SetRayDirection(diffuseReflectionDir);
+        } else if (russianRoulette < specularProbabilityThreshold) {
+            path.push_back('S');
+            storedScene->PerformRaySpecularReflection(newPhotonRay, *photonRay, intersectionPoint, NdR, state);
+        } else if (russianRoulette < transmissionProbabilityThreshold) {
+            path.push_back('S');
+            targetIOR = (NdR < SMALL_EPSILON) ? currentMaterial->GetIOR() : 1.f;
+            storedScene->PerformRayRefraction(newPhotonRay, *photonRay, intersectionPoint, NdR, state, targetIOR);
+        } else {
+            return;
+        }
+        TracePhoton(photonMap, &newPhotonRay, lightIntensity, path, targetIOR, remainingBounces - 1);
+    }
+}
+
+glm::vec3 PhotonMappingRenderer::ComputePhotonContributionAtLocation(const struct IntersectionState& intersection, const class Ray& fromCameraRay) const
+{
+    const MeshObject* parentObject = intersection.intersectedPrimitive->GetParentMeshObject();
+    assert(parentObject);
+
+    const Material* objectMaterial = parentObject->GetMaterial();
+    assert(objectMaterial);
+
+    Photon intersectionVirtualPhoton;
+    intersectionVirtualPhoton.position = intersection.intersectionRay.GetRayPosition(intersection.intersectionT);
+
+    glm::vec3 photonMappingColor;
+    std::vector<Photon> foundPhotons;
+    diffuseMap.find_within_range(intersectionVirtualPhoton, photonGatherRange, std::back_inserter(foundPhotons));
+    for (size_t i = 0; i < foundPhotons.size(); ++i) {
+#if VISUALIZE_PHOTON_MAPPING
+        photonMappingColor = glm::vec3(1.f, 0.f, 0.f);
+#else
+        photonMappingColor += objectMaterial->ComputeBRDF(intersection, foundPhotons[i].intensity, foundPhotons[i].toLightRay, fromCameraRay, 1.f, true, false);
+#endif
+    }
+    return photonMappingColor;
+}
+
+glm::vec3 PhotonMappingRenderer::ComputeSampleColorHelper(const struct IntersectionState& intersection, const class Ray& fromCameraRay, int finalGatherBouncesLeft) const
+{
+    if (!intersection.hasIntersection) {
+        return glm::vec3();
+    }
+
+    const glm::vec3 intersectionPoint = intersection.intersectionRay.GetRayPosition(intersection.intersectionT);
+    glm::vec3 photonMappingColor = ComputePhotonContributionAtLocation(intersection, fromCameraRay);
+
+#if !VISUALIZE_PHOTON_MAPPING
+    if (finalGatherBouncesLeft) {
+        const glm::vec3 intersectedNormal = intersection.ComputeNormal();
+        glm::vec3 intersectionBitangent;
+        if (glm::dot(intersectedNormal, glm::vec3(1.f, 0.f, 0.f)) - 1.f > LARGE_EPSILON) {
+            intersectionBitangent = glm::cross(intersectedNormal, glm::vec3(1.f, 0.f, 0.f));
+        } else {
+            intersectionBitangent = glm::cross(intersectedNormal, glm::vec3(0.f, 1.f, 0.f));
+        }
+        glm::vec3 intersectionTangent = glm::cross(intersectedNormal, intersectionBitangent);
+        const glm::mat3 tangentToWorldMatrix(intersectionTangent, intersectionBitangent, intersectedNormal);
+
+        int finalGatherSamplesUsed = 0;
+        glm::vec3 finalGatherColor;
+        for (int i = 0; i < finalGatherSamples; ++i) {
+            IntersectionState finalGatherState;
+            glm::vec3 finalGatherDir = glm::normalize(tangentToWorldMatrix * HemisphereRandomSample());
+            Ray finalGatherRay(intersectionPoint + intersectedNormal * LARGE_EPSILON, finalGatherDir);
+            if (storedScene->Trace(&finalGatherRay, &finalGatherState)) {
+                finalGatherColor += ComputeSampleColorHelper(finalGatherState, finalGatherRay, finalGatherBouncesLeft - 1);
+                ++finalGatherSamplesUsed;
+            }
+        }
+
+        if (finalGatherSamplesUsed) {
+            photonMappingColor += finalGatherColor / static_cast<float>(finalGatherSamplesUsed);
+        }
+    }
+#endif
+
+    glm::vec3 backwardRenderColor;
+#if !DISABLE_BACKWARD_RENDERER
+    backwardRenderColor = BackwardRenderer::ComputeSampleColor(intersection, fromCameraRay);
+#endif
+    return photonMappingColor + backwardRenderColor;
 }
 
 glm::vec3 PhotonMappingRenderer::ComputeSampleColor(const struct IntersectionState& intersection, const class Ray& fromCameraRay) const
 {
-#if VISUALIZE_PHOTON_MAPPING
-    return glm::vec3();
-#else
-    return glm::vec3();
-#endif
+    return ComputeSampleColorHelper(intersection, fromCameraRay, finalGatherBounces);
+}
+
+void PhotonMappingRenderer::SetFinalGatherSamples(int samples)
+{
+    finalGatherSamples = samples;
 }
 
 void PhotonMappingRenderer::SetNumberOfDiffusePhotons(int diffuse)
@@ -104,4 +289,19 @@ void PhotonMappingRenderer::SetNumberOfDiffusePhotons(int diffuse)
 void PhotonMappingRenderer::SetNumberOfCasuticPhotons(int caustic)
 {
     causticPhotonNumber = caustic;
+}
+
+void PhotonMappingRenderer::SetPhotonGatherRange(float range)
+{
+    photonGatherRange = range;
+}
+
+void PhotonMappingRenderer::SetMaxPhotonBounces(int bounces)
+{
+    maxPhotonBounces = bounces;
+}
+
+void PhotonMappingRenderer::SetLightIntensityMultiplier(float mult)
+{
+    lightIntensityMultiplier = mult;
 }

@@ -7,7 +7,6 @@ glm::vec3 IntersectionState::ComputeNormal() const
     assert(primitiveIntersectionWeights.size() == static_cast<size_t>(intersectedPrimitive->GetTotalVertices()));
 
     const glm::mat3 normalTransform = glm::mat3(glm::transpose(glm::inverse(primitiveParent->GetObjectToWorldMatrix())));
-
     if (intersectedPrimitive->HasVertexNormals()) {
         // If the mesh has normals, linearly interpolate the normals to get the normal to use.
         glm::vec3 retNormal;
@@ -19,11 +18,14 @@ glm::vec3 IntersectionState::ComputeNormal() const
             retBitangent += primitiveIntersectionWeights[i] * normalTransform * intersectedPrimitive->GetVertexBitangent(i);
         }
 
+        retNormal = glm::normalize(retNormal);
+        retTangent = glm::normalize(retTangent);
+        retBitangent = glm::normalize(retBitangent);
+
         if (intersectedPrimitive->HasNormalMap()) {
             return glm::normalize(intersectedPrimitive->GetVertexNormalMap(ComputeUV(), retTangent, retBitangent, retNormal));
         }
-
-        return glm::normalize(retNormal);
+        return retNormal;
     }
 
     // Otherwise, use the face normal.

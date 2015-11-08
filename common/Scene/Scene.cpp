@@ -54,10 +54,10 @@ bool Scene::Trace(class Ray* inputRay, IntersectionState* outputIntersection) co
 
             // If we're going into the mesh, set the target IOR to be the IOR of the mesh.
             float targetIOR = (NdR < SMALL_EPSILON) ? currentMaterial->GetIOR() : 1.f;
-            outputIntersection->refractionIntersection->currentIOR = targetIOR;
 
             Ray refractionRay;
             PerformRayRefraction(refractionRay, *inputRay, intersectionPoint, NdR, *outputIntersection, targetIOR);
+            outputIntersection->refractionIntersection->currentIOR = targetIOR;
             Trace(&refractionRay, outputIntersection->refractionIntersection.get());
         }
     }
@@ -73,7 +73,7 @@ void Scene::PerformRaySpecularReflection(Ray& outputRay, const Ray& inputRay, co
     outputRay.SetRayDirection(reflectionDir);
 }
 
-void Scene::PerformRayRefraction(Ray& outputRay, const Ray& inputRay, const glm::vec3& intersectionPoint, const float NdR, const IntersectionState& state, float targetIOR) const
+void Scene::PerformRayRefraction(Ray& outputRay, const Ray& inputRay, const glm::vec3& intersectionPoint, const float NdR, const IntersectionState& state, float& targetIOR) const
 {
     const glm::vec3 refractionDir = inputRay.RefractRay(state.ComputeNormal(), state.currentIOR, targetIOR);
     outputRay.SetRayPosition(intersectionPoint + LARGE_EPSILON * refractionDir);

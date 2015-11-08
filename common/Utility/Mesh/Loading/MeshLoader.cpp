@@ -7,6 +7,7 @@
 #include "assimp/postprocess.h"
 #include "assimp/material.h"
 #include "assimp/mesh.h"
+#include "assimp/cimport.h"
 #include "common/Scene/Geometry/Primitives/Primitive.h"
 #include <map>
 #include <queue>
@@ -19,7 +20,7 @@ void LoadFaceIntoPrimitive(const aiFace& face, PrimitiveBase& primitive, std::ve
     LoadFaceIntoPrimitive(face.mNumIndices, face.mIndices, primitive, allPosition, allNormals, allUV, allTangents, allBitangents);
 }
 
-    void LoadFaceIntoPrimitive(unsigned int numVertices, unsigned int* indices, PrimitiveBase& primitive, std::vector<glm::vec3>& allPosition, std::vector<glm::vec3>& allNormals, std::vector<glm::vec2>& allUV, std::vector<glm::vec3>& allTangents, std::vector<glm::vec3>& allBitangents)
+   void LoadFaceIntoPrimitive(unsigned int numVertices, unsigned int* indices, PrimitiveBase& primitive, std::vector<glm::vec3>& allPosition, std::vector<glm::vec3>& allNormals, std::vector<glm::vec2>& allUV, std::vector<glm::vec3>& allTangents, std::vector<glm::vec3>& allBitangents)
 {
     assert(numVertices == primitive.GetTotalVertices());
     bool hasNormals = allNormals.size() == allPosition.size();
@@ -56,13 +57,14 @@ std::vector<std::shared_ptr<MeshObject>> LoadMesh(const std::string& filename, s
     const std::string completeFilename = std::string(STRINGIFY(ASSET_PATH)) + "/" + filename;
 
     const aiScene* scene = importer.ReadFile(completeFilename.c_str(),
-            aiProcess_GenNormals |
-            aiProcess_CalcTangentSpace       | 
-            aiProcess_Triangulate            |
-            aiProcess_JoinIdenticalVertices  |
-            aiProcess_FixInfacingNormals |
-            aiProcess_FindInstances |
-            aiProcess_SortByPType);
+        aiProcess_GenNormals |
+        aiProcess_Triangulate |
+        aiProcess_CalcTangentSpace |
+        aiProcess_JoinIdenticalVertices |
+        aiProcess_FixInfacingNormals |
+        aiProcess_FindInstances |
+        aiProcess_SortByPType);
+
     if (!scene) {
         std::cerr << "ERROR: Assimp failed -- " << importer.GetErrorString() << std::endl;
         return {};

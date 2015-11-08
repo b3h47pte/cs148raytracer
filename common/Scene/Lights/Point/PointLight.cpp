@@ -17,4 +17,14 @@ float PointLight::ComputeLightAttenuation(glm::vec3 origin) const
 
 void PointLight::GenerateRandomPhotonRay(Ray& ray) const
 {
+    glm::vec3 randomDirection;
+    do {
+        randomDirection.x = static_cast<float>(rand()) / RAND_MAX * 2.f - 1.f;
+        randomDirection.y = static_cast<float>(rand()) / RAND_MAX * 2.f - 1.f;
+        randomDirection.z = static_cast<float>(rand()) / RAND_MAX * 2.f - 1.f;
+    } while (glm::length2(randomDirection) > 1.f);
+    randomDirection = glm::normalize(randomDirection);
+
+    ray.SetRayPosition(glm::vec3(GetPosition()));
+    ray.SetRayDirection(randomDirection);
 }

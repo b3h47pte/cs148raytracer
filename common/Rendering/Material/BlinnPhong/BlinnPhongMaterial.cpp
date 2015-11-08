@@ -79,12 +79,12 @@ bool BlinnPhongMaterial::HasSpecularReflection() const
     return (glm::length2(specularColor) > 0 || GetTexture("specularTexture") || Material::HasSpecularReflection());
 }
 
-float BlinnPhongMaterial::ComputeDiffuseReflectivity() const
+glm::vec3 BlinnPhongMaterial::GetBaseDiffuseReflection() const
 {
-    return glm::length(diffuseColor);
+    return diffuseColor;
 }
 
-float BlinnPhongMaterial::ComputeSpecularReflectivity() const
+glm::vec3 BlinnPhongMaterial::GetBaseSpecularReflection() const
 {
-    return std::max(glm::length(specularColor), Material::ComputeSpecularReflectivity());
+    return glm::max(specularColor, Material::GetBaseSpecularReflection());
 }

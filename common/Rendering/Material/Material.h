@@ -9,13 +9,10 @@ public:
     virtual ~Material();
 
     virtual glm::vec3 ComputeNonLightDependentBRDF(const class Renderer* renderer, const struct IntersectionState& intersection) const;
-    virtual glm::vec3 ComputeBRDF(const struct IntersectionState& intersection, const glm::vec3& lightColor, const class Ray& toLightRay, const class Ray& fromCameraRay, float lightAttenuation) const;
+    virtual glm::vec3 ComputeBRDF(const struct IntersectionState& intersection, const glm::vec3& lightColor, const class Ray& toLightRay, const class Ray& fromCameraRay, float lightAttenuation, bool computeDiffuse = true, bool computeSpecular = true) const;
     
     virtual std::shared_ptr<Material> Clone() const = 0;
     virtual void LoadMaterialFromAssimp(std::shared_ptr<struct aiMaterial> assimpMaterial);
-
-    virtual float ComputeDiffuseReflectivity() const = 0;
-    virtual float ComputeSpecularReflectivity() const { return reflectivity; }
 
     virtual bool HasDiffuseReflection() const = 0;
     virtual bool HasSpecularReflection() const { return IsReflective(); }
@@ -26,6 +23,10 @@ public:
     void SetTransmittance(float input);
     bool IsTransmissive() const { return transmittance > SMALL_EPSILON; }
     float GetTransmittance() const { return transmittance; }
+
+    virtual glm::vec3 GetBaseDiffuseReflection() const = 0;
+    virtual glm::vec3 GetBaseSpecularReflection() const { return glm::vec3(reflectivity); }
+    virtual glm::vec3 GetBaseTransmittance() const { return glm::vec3(transmittance); }
 
     void SetIOR(float input);
     float GetIOR() const { return indexOfRefraction; }
