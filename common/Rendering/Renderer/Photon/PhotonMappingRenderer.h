@@ -21,7 +21,7 @@ public:
     void SetLightIntensityMultiplier(float mult);
     void SetFinalGatherSamples(int samples);
 private:
-    glm::vec3 ComputeSampleColorHelper(const struct IntersectionState& intersection, const class Ray& fromCameraRay, int finalGatherBouncesLeft) const;
+    glm::vec3 ComputeSampleColorHelper(const struct IntersectionState& intersection, const class Ray& fromCameraRay, int finalGatherBouncesLeft, bool isInitial) const;
     glm::vec3 ComputePhotonContributionAtLocation(const struct IntersectionState& intersection, const class Ray& fromCameraRay) const;
     glm::vec3 HemisphereRandomSample() const;
     using PhotonKdtree = KDTree::KDTree<3, Photon, PhotonAccessor>;
@@ -35,6 +35,7 @@ private:
     float lightIntensityMultiplier;
     int finalGatherSamples;
     int finalGatherBounces;
+    int minimumPhotonsUsedPerSample;
 
     void GenericPhotonMapGeneration(PhotonKdtree& photonMap, int totalPhotons, std::function<bool(const class MeshObject&)> objectFilter);
     void TracePhoton(PhotonKdtree& photonMap, Ray* photonRay, glm::vec3 lightIntensity, std::vector<char>& path, float currentIOR, int remainingBounces);

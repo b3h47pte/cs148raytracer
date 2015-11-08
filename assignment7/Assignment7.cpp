@@ -77,5 +77,5 @@ int Assignment7::GetMaxRefractionBounces() const
 
 glm::vec2 Assignment7::GetImageOutputResolution() const
 {
-    return glm::vec2(640.f, 480.f);
+    return glm::vec2(320.f, 240.f);
 }
