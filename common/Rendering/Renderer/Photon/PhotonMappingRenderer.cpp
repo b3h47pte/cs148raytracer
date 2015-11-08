@@ -11,8 +11,8 @@
 #include "common/Rendering/Material/Material.h"
 #include "glm/gtx/component_wise.hpp"
 
-#define VISUALIZE_PHOTON_MAPPING 0
-#define DISABLE_BACKWARD_RENDERER 0
+#define VISUALIZE_PHOTON_MAPPING 1
+#define DISABLE_BACKWARD_RENDERER 1
 
 PhotonMappingRenderer::PhotonMappingRenderer(std::shared_ptr<class Scene> scene, std::shared_ptr<class ColorSampler> sampler):
     BackwardRenderer(scene, sampler), diffusePhotonNumber(500000), causticPhotonNumber(1000), 
@@ -218,6 +218,10 @@ glm::vec3 PhotonMappingRenderer::ComputePhotonContributionAtLocation(const struc
         foundPhotons.clear();
         diffuseMap.find_within_range(intersectionVirtualPhoton, gatherRangeToUse, std::back_inserter(foundPhotons));
         gatherRangeToUse *= 2.f;
+
+#if VISUALIZE_PHOTON_MAPPING
+        break;
+#endif
     }
     for (size_t i = 0; i < foundPhotons.size(); ++i) {
 #if VISUALIZE_PHOTON_MAPPING
@@ -226,9 +230,11 @@ glm::vec3 PhotonMappingRenderer::ComputePhotonContributionAtLocation(const struc
         float r = glm::distance2(foundPhotons[i].position, intersectionVirtualPhoton.position);
         photonMappingColor += objectMaterial->ComputeBRDF(intersection, foundPhotons[i].intensity, foundPhotons[i].toLightRay, fromCameraRay, 1.f, true, false) / (PI * r);
 #endif
-
     }
-    return photonMappingColor / static_cast<float>(foundPhotons.size());
+#if !VISUALIZE_PHOTON_MAPPING
+    photonMappingColor /= static_cast<float>(foundPhotons.size());
+#endif
+    return photonMappingColor;
 }
 
 glm::vec3 PhotonMappingRenderer::ComputeSampleColorHelper(const struct IntersectionState& intersection, const class Ray& fromCameraRay, int finalGatherBouncesLeft, bool isInitial) const
