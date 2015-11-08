@@ -22,8 +22,8 @@ PhotonMappingRenderer::PhotonMappingRenderer(std::shared_ptr<class Scene> scene,
     photonGatherRange(0.05f),
 #endif
     maxPhotonBounces(1000),
-    lightIntensityMultiplier(100.f),
-    finalGatherSamples(10),
+    lightIntensityMultiplier(1.f),
+    finalGatherSamples(4),
     finalGatherBounces(1),
     minimumPhotonsUsedPerSample(10)
 {
@@ -224,11 +224,11 @@ glm::vec3 PhotonMappingRenderer::ComputePhotonContributionAtLocation(const struc
         photonMappingColor = glm::vec3(1.f, 0.f, 0.f);
 #else
         float r = glm::distance2(foundPhotons[i].position, intersectionVirtualPhoton.position);
-        photonMappingColor += objectMaterial->ComputeBRDF(intersection, foundPhotons[i].intensity, foundPhotons[i].toLightRay, fromCameraRay, 1.f, true, false) / (PI * r * r);
+        photonMappingColor += objectMaterial->ComputeBRDF(intersection, foundPhotons[i].intensity, foundPhotons[i].toLightRay, fromCameraRay, 1.f, true, false) / (PI * r);
 #endif
 
     }
-    return photonMappingColor;
+    return photonMappingColor / static_cast<float>(foundPhotons.size());
 }
 
 glm::vec3 PhotonMappingRenderer::ComputeSampleColorHelper(const struct IntersectionState& intersection, const class Ray& fromCameraRay, int finalGatherBouncesLeft, bool isInitial) const
