@@ -36,7 +36,7 @@ std::shared_ptr<Scene> Assignment7::CreateScene() const
 
     // Lights
     std::shared_ptr<Light> pointLight = std::make_shared<PointLight>();
-    pointLight->SetPosition(glm::vec3(0.01909f, 0.0101f, 1.97028f));
+    pointLight->SetPosition(glm::vec3(0.01909f, 0.0101f, 1.77640f));
     pointLight->SetLightColor(glm::vec3(1.f, 1.f, 1.f));
     newScene->AddLight(pointLight);
 
@@ -46,7 +46,7 @@ std::shared_ptr<Scene> Assignment7::CreateScene() const
 std::shared_ptr<ColorSampler> Assignment7::CreateSampler() const
 {
     std::shared_ptr<JitterColorSampler> jitter = std::make_shared<JitterColorSampler>();
-    jitter->SetGridSize(glm::ivec3(1, 1, 1));
+    jitter->SetGridSize(glm::ivec3(2, 2, 1));
     return jitter;
 }
 
@@ -57,7 +57,7 @@ std::shared_ptr<class Renderer> Assignment7::CreateRenderer(std::shared_ptr<Scen
 
 int Assignment7::GetSamplesPerPixel() const
 {
-    return 1;
+    return 4;
 }
 
 bool Assignment7::NotifyNewPixelSample(glm::vec3 inputSampleColor, int sampleIndex)

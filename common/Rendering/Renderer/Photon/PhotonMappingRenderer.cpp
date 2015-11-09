@@ -15,16 +15,16 @@
 #define DISABLE_BACKWARD_RENDERER 1
 
 PhotonMappingRenderer::PhotonMappingRenderer(std::shared_ptr<class Scene> scene, std::shared_ptr<class ColorSampler> sampler):
-    BackwardRenderer(scene, sampler), diffusePhotonNumber(5000000), causticPhotonNumber(1000), 
+    BackwardRenderer(scene, sampler), diffusePhotonNumber(200000), causticPhotonNumber(1000), 
 #if VISUALIZE_PHOTON_MAPPING
     photonGatherRange(0.002f),
 #else
     photonGatherRange(0.03f),
 #endif
-    maxPhotonBounces(100),
+    maxPhotonBounces(1000),
     lightIntensityMultiplier(10.f),
-    finalGatherSamples(4),
-    finalGatherBounces(0),
+    finalGatherSamples(100),
+    finalGatherBounces(1),
     photonsUsedPerSample(200)
 {
     srand(static_cast<unsigned int>(time(NULL)));
@@ -163,13 +163,13 @@ void PhotonMappingRenderer::TracePhoton(PhotonKdtree& photonMap, Ray* photonRay,
 
         const glm::vec3 intersectedNormal = state.ComputeNormal();
         glm::vec3 intersectionBitangent;
-        if (glm::dot(intersectedNormal, glm::vec3(1.f, 0.f, 0.f)) - 1.f > LARGE_EPSILON) {
-            intersectionBitangent = glm::cross(intersectedNormal, glm::vec3(1.f, 0.f, 0.f));
+        if (std::abs(glm::dot(intersectedNormal, glm::vec3(1.f, 0.f, 0.f))) - 1.f < -LARGE_EPSILON) {
+            intersectionBitangent = glm::normalize(glm::cross(intersectedNormal, glm::vec3(1.f, 0.f, 0.f)));
         } else {
-            intersectionBitangent = glm::cross(intersectedNormal, glm::vec3(0.f, 1.f, 0.f));
+            intersectionBitangent = glm::normalize(glm::cross(intersectedNormal, glm::vec3(0.f, 1.f, 0.f)));
         }
 
-        glm::vec3 intersectionTangent = glm::cross(intersectedNormal, intersectionBitangent);
+        glm::vec3 intersectionTangent = glm::normalize(glm::cross(intersectedNormal, intersectionBitangent));
         const glm::mat3 tangentToWorldMatrix(intersectionTangent, intersectionBitangent, intersectedNormal);
 
         Ray newPhotonRay;
@@ -256,17 +256,19 @@ glm::vec3 PhotonMappingRenderer::ComputeSampleColorHelper(const struct Intersect
 
     if (finalGatherBouncesLeft) {
         const glm::vec3 intersectedNormal = intersection.ComputeNormal();
+
         glm::vec3 intersectionBitangent;
-        if (glm::dot(intersectedNormal, glm::vec3(1.f, 0.f, 0.f)) - 1.f > LARGE_EPSILON) {
-            intersectionBitangent = glm::cross(intersectedNormal, glm::vec3(1.f, 0.f, 0.f));
+        if (std::abs(glm::dot(intersectedNormal, glm::vec3(1.f, 0.f, 0.f))) - 1.f < -LARGE_EPSILON) {
+            intersectionBitangent = glm::normalize(glm::cross(intersectedNormal, glm::vec3(1.f, 0.f, 0.f)));
         } else {
-            intersectionBitangent = glm::cross(intersectedNormal, glm::vec3(0.f, 1.f, 0.f));
+            intersectionBitangent = glm::normalize(glm::cross(intersectedNormal, glm::vec3(0.f, 1.f, 0.f)));
         }
-        glm::vec3 intersectionTangent = glm::cross(intersectedNormal, intersectionBitangent);
+        glm::vec3 intersectionTangent = glm::normalize(glm::cross(intersectedNormal, intersectionBitangent));
         const glm::mat3 tangentToWorldMatrix(intersectionTangent, intersectionBitangent, intersectedNormal);
 
         int finalGatherSamplesUsed = 0;
         glm::vec3 finalGatherColor;
+
         for (int i = 0; i < finalGatherSamples; ++i) {
             IntersectionState finalGatherState;
             glm::vec3 finalGatherDir = glm::normalize(tangentToWorldMatrix * HemisphereRandomSample());
