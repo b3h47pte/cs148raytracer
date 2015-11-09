@@ -11,21 +11,21 @@
 #include "common/Rendering/Material/Material.h"
 #include "glm/gtx/component_wise.hpp"
 
-#define VISUALIZE_PHOTON_MAPPING 1
+#define VISUALIZE_PHOTON_MAPPING 0
 #define DISABLE_BACKWARD_RENDERER 1
 
 PhotonMappingRenderer::PhotonMappingRenderer(std::shared_ptr<class Scene> scene, std::shared_ptr<class ColorSampler> sampler):
-    BackwardRenderer(scene, sampler), diffusePhotonNumber(500000), causticPhotonNumber(1000), 
+    BackwardRenderer(scene, sampler), diffusePhotonNumber(5000000), causticPhotonNumber(1000), 
 #if VISUALIZE_PHOTON_MAPPING
-    photonGatherRange(0.05f),
+    photonGatherRange(0.002f),
 #else
-    photonGatherRange(0.05f),
+    photonGatherRange(0.03f),
 #endif
-    maxPhotonBounces(1000),
-    lightIntensityMultiplier(1.f),
+    maxPhotonBounces(100),
+    lightIntensityMultiplier(10.f),
     finalGatherSamples(4),
-    finalGatherBounces(1),
-    minimumPhotonsUsedPerSample(10)
+    finalGatherBounces(0),
+    photonsUsedPerSample(200)
 {
     srand(static_cast<unsigned int>(time(NULL)));
 }
@@ -214,25 +214,18 @@ glm::vec3 PhotonMappingRenderer::ComputePhotonContributionAtLocation(const struc
     glm::vec3 photonMappingColor;
     std::vector<Photon> foundPhotons;
     float gatherRangeToUse = photonGatherRange;
-    while (foundPhotons.size() < minimumPhotonsUsedPerSample) {
-        foundPhotons.clear();
-        diffuseMap.find_within_range(intersectionVirtualPhoton, gatherRangeToUse, std::back_inserter(foundPhotons));
-        gatherRangeToUse *= 2.f;
+    diffuseMap.find_within_range(intersectionVirtualPhoton, gatherRangeToUse, std::back_inserter(foundPhotons));
 
 #if VISUALIZE_PHOTON_MAPPING
-        break;
-#endif
-    }
-    for (size_t i = 0; i < foundPhotons.size(); ++i) {
-#if VISUALIZE_PHOTON_MAPPING
-        photonMappingColor = glm::vec3(1.f, 0.f, 0.f);
+    for (int i = 0; i < foundPhotons.size(); ++i) {
+        photonMappingColor =  glm::vec3(1.f, 0.f, 0.f);
 #else
-        float r = glm::distance2(foundPhotons[i].position, intersectionVirtualPhoton.position);
-        photonMappingColor += objectMaterial->ComputeBRDF(intersection, foundPhotons[i].intensity, foundPhotons[i].toLightRay, fromCameraRay, 1.f, true, false) / (PI * r);
+    for (int i = 0; i < foundPhotons.size(); ++i) {
+        photonMappingColor += objectMaterial->ComputeBRDF(intersection, foundPhotons[i].intensity, foundPhotons[i].toLightRay, fromCameraRay, 1.f, true, false);
 #endif
     }
 #if !VISUALIZE_PHOTON_MAPPING
-    photonMappingColor /= static_cast<float>(foundPhotons.size());
+    photonMappingColor /= (PI * gatherRangeToUse * gatherRangeToUse);
 #endif
     return photonMappingColor;
 }
@@ -247,15 +240,20 @@ glm::vec3 PhotonMappingRenderer::ComputeSampleColorHelper(const struct Intersect
     glm::vec3 photonMappingColor;
 
 #if !VISUALIZE_PHOTON_MAPPING
-    if (!isInitial) {
+    if (!isInitial || !finalGatherBouncesLeft) {
 #endif
         photonMappingColor = ComputePhotonContributionAtLocation(intersection, fromCameraRay);
-
 #if !VISUALIZE_PHOTON_MAPPING
     }
 #endif
 
 #if !VISUALIZE_PHOTON_MAPPING
+    const MeshObject* parentObject = intersection.intersectedPrimitive->GetParentMeshObject();
+    assert(parentObject);
+
+    const Material* objectMaterial = parentObject->GetMaterial();
+    assert(objectMaterial);
+
     if (finalGatherBouncesLeft) {
         const glm::vec3 intersectedNormal = intersection.ComputeNormal();
         glm::vec3 intersectionBitangent;
@@ -274,11 +272,11 @@ glm::vec3 PhotonMappingRenderer::ComputeSampleColorHelper(const struct Intersect
             glm::vec3 finalGatherDir = glm::normalize(tangentToWorldMatrix * HemisphereRandomSample());
             Ray finalGatherRay(intersectionPoint + intersectedNormal * LARGE_EPSILON, finalGatherDir);
             if (storedScene->Trace(&finalGatherRay, &finalGatherState)) {
-                finalGatherColor += ComputeSampleColorHelper(finalGatherState, finalGatherRay, finalGatherBouncesLeft - 1, false);
+                glm::vec3 incomingRadiance = ComputeSampleColorHelper(finalGatherState, finalGatherRay, finalGatherBouncesLeft - 1, false);
+                finalGatherColor += objectMaterial->ComputeBRDF(intersection, incomingRadiance, finalGatherRay, fromCameraRay, 1.f, true, false);
                 ++finalGatherSamplesUsed;
             }
         }
-
         photonMappingColor += finalGatherColor / static_cast<float>(finalGatherSamples);
     }
 #endif

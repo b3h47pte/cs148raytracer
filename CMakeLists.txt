@@ -81,7 +81,7 @@ if (WIN32)
 elseif (APPLE)
     target_link_libraries(cs148raytracer "${CMAKE_CURRENT_SOURCE_DIR}/external/assimp/distrib/osx/libassimp.dylib")
 else()
-    target_link_libraries(cs148raytracer "${CMAKE_CURRENT_SOURCE_DIR}/external/assimp/distrib/unix/libassimp.so")
+    target_link_libraries(cs148raytracer "libassimp.so")
 endif()
 
 # FreeImage Library

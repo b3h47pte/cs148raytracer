@@ -4,7 +4,7 @@
 std::shared_ptr<Camera> Assignment7::CreateCamera() const
 {
     const glm::vec2 resolution = GetImageOutputResolution();
-    std::shared_ptr<Camera> camera = std::make_shared<PerspectiveCamera>(resolution.x / resolution.y, 26.6f);
+    std::shared_ptr<Camera> camera = std::make_shared<PerspectiveCamera>(resolution.x / resolution.y, 36.6f);
     camera->SetPosition(glm::vec3(0.f, -4.1469f, 0.73693f));
     camera->Rotate(glm::vec3(1.f, 0.f, 0.f), PI / 2.f);
     return camera;

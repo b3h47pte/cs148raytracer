@@ -35,7 +35,7 @@ private:
     float lightIntensityMultiplier;
     int finalGatherSamples;
     int finalGatherBounces;
-    int minimumPhotonsUsedPerSample;
+    int photonsUsedPerSample;
 
     void GenericPhotonMapGeneration(PhotonKdtree& photonMap, int totalPhotons, std::function<bool(const class MeshObject&)> objectFilter);
     void TracePhoton(PhotonKdtree& photonMap, Ray* photonRay, glm::vec3 lightIntensity, std::vector<char>& path, float currentIOR, int remainingBounces);
