@@ -12,18 +12,18 @@
 #include "glm/gtx/component_wise.hpp"
 
 #define VISUALIZE_PHOTON_MAPPING 0
-#define DISABLE_BACKWARD_RENDERER 1
+#define DISABLE_BACKWARD_RENDERER 0
 
 PhotonMappingRenderer::PhotonMappingRenderer(std::shared_ptr<class Scene> scene, std::shared_ptr<class ColorSampler> sampler):
     BackwardRenderer(scene, sampler), diffusePhotonNumber(200000), causticPhotonNumber(1000), 
 #if VISUALIZE_PHOTON_MAPPING
-    photonGatherRange(0.002f),
+    photonGatherRange(0.003f),
 #else
     photonGatherRange(0.03f),
 #endif
     maxPhotonBounces(1000),
     lightIntensityMultiplier(10.f),
-    finalGatherSamples(100),
+    finalGatherSamples(4000),
     finalGatherBounces(1),
     photonsUsedPerSample(200)
 {
@@ -163,7 +163,7 @@ void PhotonMappingRenderer::TracePhoton(PhotonKdtree& photonMap, Ray* photonRay,
 
         const glm::vec3 intersectedNormal = state.ComputeNormal();
         glm::vec3 intersectionBitangent;
-        if (std::abs(glm::dot(intersectedNormal, glm::vec3(1.f, 0.f, 0.f))) - 1.f < -LARGE_EPSILON) {
+        if (std::abs(glm::dot(intersectedNormal, glm::vec3(1.f, 0.f, 0.f))) < 0.8f) {
             intersectionBitangent = glm::normalize(glm::cross(intersectedNormal, glm::vec3(1.f, 0.f, 0.f)));
         } else {
             intersectionBitangent = glm::normalize(glm::cross(intersectedNormal, glm::vec3(0.f, 1.f, 0.f)));
@@ -256,17 +256,15 @@ glm::vec3 PhotonMappingRenderer::ComputeSampleColorHelper(const struct Intersect
 
     if (finalGatherBouncesLeft) {
         const glm::vec3 intersectedNormal = intersection.ComputeNormal();
-
         glm::vec3 intersectionBitangent;
-        if (std::abs(glm::dot(intersectedNormal, glm::vec3(1.f, 0.f, 0.f))) - 1.f < -LARGE_EPSILON) {
+        if (std::abs(glm::dot(intersectedNormal, glm::vec3(1.f, 0.f, 0.f))) < 0.8f) {
             intersectionBitangent = glm::normalize(glm::cross(intersectedNormal, glm::vec3(1.f, 0.f, 0.f)));
         } else {
             intersectionBitangent = glm::normalize(glm::cross(intersectedNormal, glm::vec3(0.f, 1.f, 0.f)));
         }
+
         glm::vec3 intersectionTangent = glm::normalize(glm::cross(intersectedNormal, intersectionBitangent));
         const glm::mat3 tangentToWorldMatrix(intersectionTangent, intersectionBitangent, intersectedNormal);
-
-        int finalGatherSamplesUsed = 0;
         glm::vec3 finalGatherColor;
 
         for (int i = 0; i < finalGatherSamples; ++i) {
@@ -276,7 +274,6 @@ glm::vec3 PhotonMappingRenderer::ComputeSampleColorHelper(const struct Intersect
             if (storedScene->Trace(&finalGatherRay, &finalGatherState)) {
                 glm::vec3 incomingRadiance = ComputeSampleColorHelper(finalGatherState, finalGatherRay, finalGatherBouncesLeft - 1, false);
                 finalGatherColor += objectMaterial->ComputeBRDF(intersection, incomingRadiance, finalGatherRay, fromCameraRay, 1.f, true, false);
-                ++finalGatherSamplesUsed;
             }
         }
         photonMappingColor += finalGatherColor / static_cast<float>(finalGatherSamples);
